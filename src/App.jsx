@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import nimbus76 from "./assets/nimbus76.webp";
-import logoVid from "./assets/logo_vid-3.mp4";
+import logoVid from "./assets/logo_vid-4.mp4";
 import bbr from "./assets/bbr.webp";
 import rainAudio from "./assets/rain.mp3";
 import classicAudio from "./assets/classic.mp3";
