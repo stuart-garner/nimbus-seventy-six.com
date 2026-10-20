@@ -2,6 +2,7 @@ import { useState } from "react";
 import nimbus76 from "./assets/nimbus76.webp";
 import logoVid from "./assets/logo_vid-2.mp4";
 import bbr from "./assets/bbr.webp";
+import { Analytics } from "@vercel/analytics/react";
 
 function isFastConnection() {
   const connection =
@@ -23,6 +24,7 @@ function App() {
   return (
     <>
       <div className="hero">
+        <Analytics />
         <img className="fullscreen" src={nimbus76} alt="Nimbus 76" />
         {playLogoVideo && (
           <video
