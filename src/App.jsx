@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import nimbus76 from "./assets/nimbus76.webp";
-import logoVid from "./assets/logo_vid-2.mp4";
+import logoVid from "./assets/logo_vid-3.mp4";
 import bbr from "./assets/bbr.webp";
 import rainAudio from "./assets/rain.mp3";
 import classicAudio from "./assets/classic.mp3";
+import SpectrumAnalyzer from "./SpectrumAnalyzer";
 import { Analytics } from "@vercel/analytics/react";
 
 function isFastConnection() {
@@ -48,19 +49,52 @@ function findAudibleRange(buffer) {
 }
 
 // <audio loop> pauses briefly at each repeat, so play the track through Web
-// Audio, which loops sample-accurately. Returns a cleanup function.
+// Audio, which loops sample-accurately. Returns the context and the node the
+// music plays through, for visualising it, and a function to stop it.
 function startSeamlessLoop(url) {
   const ctx = new AudioContext();
   let cancelled = false;
 
-  // Like <audio>, the context stays suspended until the user interacts.
-  const events = ["pointerdown", "keydown", "touchstart"];
-  const resume = () => ctx.resume();
-  const removeListeners = () =>
-    events.forEach((e) => window.removeEventListener(e, resume));
-  events.forEach((e) => window.addEventListener(e, resume));
+  // Fade in from silence, then hold at full volume. The context's clock is
+  // frozen while suspended, so a fade scheduled before playback starts
+  // still runs in full once it does.
+  const gain = ctx.createGain();
+  gain.connect(ctx.destination);
+  let fadeDuration = 0;
+  const fadeIn = () => {
+    const now = ctx.currentTime;
+    gain.gain.cancelScheduledValues(now);
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(1, now + fadeDuration);
+  };
+
+  // Like <audio>, the context stays suspended until the user interacts, so
+  // the first interaction starts it. Each click after that toggles it on and
+  // off; suspending freezes the context's clock, so it resumes where it was,
+  // fading in again.
+  let started = false;
+  const start = () => {
+    started = true;
+    ctx.resume();
+  };
+  const toggle = () => {
+    if (!started) start();
+    else if (ctx.state === "running") ctx.suspend();
+    else {
+      fadeIn();
+      ctx.resume();
+    }
+  };
+  const startEvents = ["keydown", "touchstart"];
+  const removeListeners = () => {
+    startEvents.forEach((e) => window.removeEventListener(e, start));
+    window.removeEventListener("pointerdown", toggle);
+  };
+  startEvents.forEach((e) => window.addEventListener(e, start));
+  window.addEventListener("pointerdown", toggle);
   ctx.onstatechange = () => {
-    if (ctx.state === "running") removeListeners();
+    if (ctx.state === "running")
+      startEvents.forEach((e) => window.removeEventListener(e, start));
   };
 
   fetch(url)
@@ -75,23 +109,21 @@ function startSeamlessLoop(url) {
       source.loopStart = loopStart;
       source.loopEnd = loopEnd;
 
-      // Fade in over the first pass of the loop, then hold at full volume.
-      // The context's clock is frozen while suspended, so this still lines
-      // up with the first loop if playback waits for a user interaction.
-      const gain = ctx.createGain();
-      gain.gain.setValueAtTime(0, ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(1, ctx.currentTime + loopEnd - loopStart);
+      // Fade in over one pass of the loop.
+      fadeDuration = loopEnd - loopStart;
+      fadeIn();
 
-      source.connect(gain).connect(ctx.destination);
+      source.connect(gain);
       source.start(0, loopStart);
     })
     .catch(() => {});
 
-  return () => {
+  const stop = () => {
     cancelled = true;
     removeListeners();
     ctx.close();
   };
+  return { audioCtx: ctx, output: gain, stop };
 }
 
 function App() {
@@ -102,7 +134,13 @@ function App() {
     startAudio(rainRef.current);
   }, []);
 
-  useEffect(() => startSeamlessLoop(classicAudio), []);
+  const [music, setMusic] = useState(null);
+
+  useEffect(() => {
+    const loop = startSeamlessLoop(classicAudio);
+    setMusic(loop);
+    return loop.stop;
+  }, []);
 
   return (
     <>
@@ -122,6 +160,9 @@ function App() {
         )}
       </div>
       <audio ref={rainRef} src={rainAudio} loop preload="auto" />
+      {music && (
+        <SpectrumAnalyzer audioCtx={music.audioCtx} source={music.output} />
+      )}
       <img className="bbr-logo" src={bbr} alt="Brain Butter Records" />
     </>
   );
